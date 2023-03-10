@@ -3,8 +3,11 @@ using namespace std;
 
 *********/
 #define ILLUMINATION
+// #define YATEKS
+// #define EE364
+// #define VAISALA
 // #define HYDROGEN_SENSOR
-// #define DEBUG1
+#define DEBUG1 // Симуляція зміни значень з датчиків *+0.1... 
 // #define DEBUG3
 // #define DEBUG5
 // #define DEBUG485
@@ -25,7 +28,8 @@ using namespace std;
 #define BUZZER 12          // бузер
 #define Slave_ID_Moist 243 // адресс датчика влажности
 #define Slave_ID_H2 1      // адрес датчика водорода
-
+#define Slave_ID_Yateks 5
+#define Slave_ID_Vaisala 2
 #define BUZER_ON // использование бузера
 // таймера в миллисекундах
 #define TIMER15m 900000
@@ -102,7 +106,7 @@ NexNumber x4 = NexNumber(1, 17, "x4"); // максимум активність 
 NexNumber x5 = NexNumber(1, 18, "x5"); // мінімум активність води
 NexNumber x6 = NexNumber(1, 22, "x6"); // максимум вміст води
 NexNumber x7 = NexNumber(1, 21, "x7"); // мінімум вміст води
-
+NexNumber x8 = NexNumber(1, 21, "x8");
 
 NexButton b4 = NexButton(1, 25, "b4");       // КНОПКА сброс мін\макс
 NexDSButton bt0 = NexDSButton(1, 15, "bt0"); // КОПКА переключатель печать после таймера
@@ -173,7 +177,7 @@ void postTransmission()
   digitalWrite(MAX485_RE_NEG, LOW);
 }
 //*******
-Adafruit_Thermal printer(&Serial1); //  Подключаем принтер в порту
+Adafruit_Thermal printer(&Serial); //  Подключаем принтер в порту
 
 // iarduino_RTC watch(RTC_DS3231);                         // Объявляем объект watch для работы с RTC модулем на базе чипа DS3231, используется шина I2C.
 iarduino_RTC watch(RTC_DS1302, 26, 33, 25); // Объявляем объект watch для работы с RTC модулем на базе чипа DS1302, указывая выводы Arduino подключённые к выводам модуля RST, CLK, DAT
@@ -221,7 +225,9 @@ float te;                           // температура c (датчика)
 float h2_PCB_T, h2_Oil_T;
 float WaterA_m = 0.0, WaterC_m = 0.0, te_m = 0.0, h2_m = 0.0;
 float WaterA_p = 0.0, WaterAmin_p = 0.0, WaterAmax_p = 0.0, WaterC_p = 0.0, WaterCmin_p = 0.0, WaterCmax_p = 0.0, te_p = 0.0, h2_p = 0.0; // переменные для печати
-float PCB_Temper_TOR1, CPU_Temper_TOR1;                                                                                                   // температура с датчика DS18b20
+float PCB_Temper_TOR1, CPU_Temper_TOR1;    
+float yateks_aw=0.0, yateks_ppm=0.0, yateks_t=0.0;
+float vaisala_aw=0.0, vaisala_ppm = 0.0, vaisala_T = 0.0;                                                                                               // температура с датчика DS18b20
 uint32_t h2;                                                                                                                              // температура c (датчика)
 uint16_t h2_status, h2_status_m;
 
@@ -296,7 +302,7 @@ void setup()
   //  Serial.begin(9600, SERIAL_8N1, RXD0, TXD0); // для Экрана Nextion
   Serial.begin(115200, SERIAL_8N1);            // для теста
   Serial1.begin(9600, SERIAL_8N1, RXD1, TXD1); // для принтера
-  Serial2.begin(9600, SERIAL_8E1, RXD2, TXD2); // для чтения датчиков по RS485
+  Serial2.begin(9600, SERIAL_8N1, RXD2, TXD2); // для чтения датчиков по RS485
   // SWserial.begin(115200, SWSERIAL_8N1, RXD3, TXD3);
 
   EEPROM.begin(EEPROM_SIZE); // инициализировать EEPROM с предопределенным размером
@@ -326,10 +332,6 @@ void setup()
   //  WiFi.softAP(ssid, password);
   //  IPAddress IP = WiFi.softAPIP();
   //    WiFi.disconnect(true, false);
-#ifdef DEBUG1
-  SWserial.print("AP IP address: ");
-  SWserial.println(IP);
-#endif
   // server.begin();
 
   // тестовый пин
@@ -342,8 +344,8 @@ void setup()
 
   nexInit();
 
-  xTaskCreatePinnedToCore(Task_LCD_update, "Task LCD update", 5000, NULL, 3, &Handle_LCD1, 0);
-  xTaskCreatePinnedToCore(Task_LCD_listen, "Task LCD listen", 5000, NULL, 3, &Handle_LCD2, 1);
+  // xTaskCreatePinnedToCore(Task_LCD_update, "Task LCD update", 5000, NULL, 3, &Handle_LCD1, 0);
+  // xTaskCreatePinnedToCore(Task_LCD_listen, "Task LCD listen", 5000, NULL, 3, &Handle_LCD2, 1);
   xTaskCreatePinnedToCore(Task_after10seccondOneTime, "Task after 10 seccond 1 time", 5000, NULL, 1, &Handle_after10seccondOneTime, 0);
   // xTaskCreatePinnedToCore(Task_Web, "Task WEB", 50000, NULL, 2, &Handle_Web, 1);
 
@@ -360,8 +362,8 @@ void setup()
   xQueueSendToBack(q_effectLEDquick, &mode, 0); // включение ЛЕД ленты
   led_fon = 0;
 #endif
-  xTaskCreatePinnedToCore(Task_DS18b20, "Task DS18b20", 5000, NULL, 1, &Handle_DS18b20, 0);
-  //xTaskCreatePinnedToCore(Task_Debug, "Task Debug", 5000, NULL, 2, &Handle_Debug, 0);
+  // xTaskCreatePinnedToCore(Task_DS18b20, "Task DS18b20", 5000, NULL, 1, &Handle_DS18b20, 0);
+  // xTaskCreatePinnedToCore(Task_Debug, "Task Debug", 5000, NULL, 2, &Handle_Debug, 0);
   /**/
 }
 
@@ -496,18 +498,16 @@ void bt35pop(void *ptr)
   }
 }
 
-void page0PushCallback(void *ptr) { pag = 0;}
-void page1PushCallback(void *ptr) { pag = 1;}
-void page2PushCallback(void *ptr) { pag = 2;}
-void page3PushCallback(void *ptr) { pag = 3;}
-void page4PushCallback(void *ptr) { pag = 4;}
-void page5PushCallback(void *ptr) { pag = 5;}
-void page6PushCallback(void *ptr) { pag = 6;}
-void page7PushCallback(void *ptr) { pag = 7;}
-void page8PushCallback(void *ptr) { pag = 8;}
-void page9PushCallback(void *ptr) { pag = 9;}
-
-
+void page0PushCallback(void *ptr) { pag = 0; }
+void page1PushCallback(void *ptr) { pag = 1; }
+void page2PushCallback(void *ptr) { pag = 2; }
+void page3PushCallback(void *ptr) { pag = 3; }
+void page4PushCallback(void *ptr) { pag = 4; }
+void page5PushCallback(void *ptr) { pag = 5; }
+void page6PushCallback(void *ptr) { pag = 6; }
+void page7PushCallback(void *ptr) { pag = 7; }
+void page8PushCallback(void *ptr) { pag = 8; }
+void page9PushCallback(void *ptr) { pag = 9; }
 
 void Task_LCD_listen(void *pvParam)
 {
@@ -611,21 +611,17 @@ void Task_LCD_update(void *pvParam)
     {
     case 1: // Page 1
 
-      x0.setValue((uint32_t)(WaterA * 1000 + 0.5));
-      x1.setValue((uint32_t)(WaterC * 100 + 0.5));
-      x2.setValue((uint32_t)(te * 100 + 0.5));
+      x0.setValue((uint32_t)(yateks_aw * 1000 + 0.5));
+      x1.setValue((uint32_t)(yateks_ppm * 100 + 0.5));
+      x2.setValue((uint32_t)(yateks_t * 100 + 0.5));
 
-      if (WaterA > WaterAmax) {WaterAmax = WaterA;}
-      if (WaterA < WaterAmin) {WaterAmin = WaterA;}
-      if (WaterC > WaterCmax) {WaterCmax = WaterC;}
-      if (WaterC < WaterCmin) {WaterCmin = WaterC;}
+      x3.setValue((uint32_t)(WaterA * 1000 + 0.5));
+      x4.setValue((uint32_t)(WaterC * 100 + 0.5));
+      x5.setValue((uint32_t)(te * 100 + 0.5));
 
-      x4.setValue((uint32_t)(WaterAmax * 1000 + 0.5));
-      x5.setValue((uint32_t)(WaterAmin * 1000 + 0.5));
-      x6.setValue((uint32_t)(WaterCmax * 100 + 0.5));
-      x7.setValue((uint32_t)(WaterCmin * 100 + 0.5));
-
-    
+      x6.setValue((uint32_t)(vaisala_aw * 1000 + 0.5));
+      x7.setValue((uint32_t)(vaisala_ppm * 100 + 0.5));
+      x8.setValue((uint32_t)(vaisala_T * 100 + 0.5));
 
 #ifdef HYDROGEN_SENSOR
       x3.setValue((uint32_t)(h2));
@@ -697,14 +693,14 @@ void Task_LCD_update(void *pvParam)
         strcpy(TIME_p, TIME_);
 
         // обновляем переменные для вывода на печать
-        x0.setValue((uint32_t)(WaterA_p * 1000 + 0.5));
-        x1.setValue((uint32_t)(WaterC_p * 100 + 0.5));
-        x2.setValue((uint32_t)(te_p * 100 + 0.5));
+        // x0.setValue((uint32_t)(WaterA_p * 1000 + 0.5));
+        // x1.setValue((uint32_t)(WaterC_p * 100 + 0.5));
+        // x2.setValue((uint32_t)(te_p * 100 + 0.5));
 
-        x4.setValue((uint32_t)(WaterAmax_p * 1000 + 0.5));
-        x5.setValue((uint32_t)(WaterAmin_p * 1000 + 0.5));
-        x6.setValue((uint32_t)(WaterCmax_p * 100 + 0.5));
-        x7.setValue((uint32_t)(WaterCmin_p * 100 + 0.5));
+        // x4.setValue((uint32_t)(WaterAmax_p * 1000 + 0.5));
+        // x5.setValue((uint32_t)(WaterAmin_p * 1000 + 0.5));
+        // x6.setValue((uint32_t)(WaterCmax_p * 100 + 0.5));
+        // x7.setValue((uint32_t)(WaterCmin_p * 100 + 0.5));
 #ifdef HYDROGEN_SENSOR
         x3.setValue((uint32_t)(h2_p));
 #endif
@@ -780,292 +776,10 @@ void Task_LCD_update(void *pvParam)
   }
 }
 
-void Task_Web(void *pvParam)
-{
-  // // TickType_t xLastWakeTime;
-  // // xLastWakeTime = xTaskGetTickCount();
-  // while (1)
-  // {
-  //   // vTaskDelayUntil(&xLastWakeTime, periodWeb);
-  //   vTaskDelay(PERIOD_Web);
-  //   //*************************************************************************************************************************************************************************
-  //   // ВЕБ СЕРВЕР
-  //   //*************************************************************************************************************************************************************************
-  //   // WiFiClient client = server.available(); // Listen for incoming clients
-
-  //   if (client)
-  //   {                          // If a new client connects,
-  //                              // Serial.println("New Client.");          // print a message out in the serial port
-  //     String currentLine = ""; // make a String to hold incoming data from the client
-  //     while (client.connected())
-  //     { // loop while the client's connected
-  //       if (client.available())
-  //       {                         // if there's bytes to read from the client,
-  //         char c = client.read(); // read a byte, then
-  //                                 //     Serial.write(c);                    // print it out the serial monitor
-  //         header += c;
-  //         if (c == '\n')
-  //         { // if the byte is a newline character
-  //           // if the current line is blank, you got two newline characters in a row.
-  //           // that's the end of the client HTTP request, so send a response:
-  //           if (currentLine.length() == 0)
-  //           {
-
-  //             // HTTP headers always start with a response code (e.g. HTTP/1.1 200 OK)
-  //             // and a content-type so the client knows what's coming, then a blank line:
-  //             client.println("HTTP/1.1 200 OK");
-  //             client.println("Content-type:text/html");
-  //             client.println("Connection: close");
-  //             client.println();
-
-  //             ///////////
-
-  //             // Команда REPORT
-  //             if (header.indexOf("GET /REPORT") >= 0)
-  //             {
-  //               Page_1 = "Report"; //
-  //             }
-
-  //             // Команда PRINT
-  //             if (header.indexOf("GET /PRINT/on") >= 0)
-  //             {
-  //               Print_1 = "off";
-  //               Print_on = true; //
-  //             }
-  //             // Команда PRINT
-  //             if (header.indexOf("GET /PRINT/off") >= 0)
-  //             {
-  //               Print_1 = "on";
-  //             }
-
-  //             // Команда Return
-  //             if (header.indexOf("GET /Return") >= 0)
-  //             {
-  //               Page_1 = "Main"; //
-  //             }
-
-  //             // Команда SETTYNG
-  //             if (header.indexOf("GET /SETTYNG") >= 0)
-  //             {
-  //               Page_1 = "Setting"; //
-  //             }
-
-  //             /////**** Команда настройка RTC
-  //             // watch.settime(s,m,h,D,M,Y,W); // Записываем время в модуль: 0 сек, 51 мин, 21 час, 27, октября, 2015 года, вторник.
-  //             // uint8_t D, M, Y, h, m, s, W; // Объявляем переменные для получения следующих значений: D-день, M-месяц, Y-год, h-часы, m-минуты, s-секунды, W-день недели.
-  //             //  настройка ДЕНЬ+
-  //             if (header.indexOf("GET /Day+") >= 0)
-  //             {
-  //               D = D + 1;
-  //               watch.settime(-1, -1, -1, D, -1, -1, -1); // Записываем время в модуль: 0 сек, 51 мин, 21 час, 27, октября, 2015 года, вторник.
-  //             }
-  //             // настройка ДЕНЬ-
-  //             if (header.indexOf("GET /Day-") >= 0)
-  //             {
-  //               D = D - 1;
-  //               watch.settime(-1, -1, -1, D, -1, -1, -1); // Записываем время в модуль: 0 сек, 51 мин, 21 час, 27, октября, 2015 года, вторник.
-  //             }
-  //             // настройка месяц+
-  //             if (header.indexOf("GET /Month+") >= 0)
-  //             {
-  //               M = M + 1;
-  //               watch.settime(-1, -1, -1, -1, M, -1, -1); // Записываем время в модуль: 0 сек, 51 мин, 21 час, 27, октября, 2015 года, вторник.
-  //             }
-  //             // настройка месяц-
-  //             if (header.indexOf("GET /Month-") >= 0)
-  //             {
-  //               M = M - 1;
-  //               watch.settime(-1, -1, -1, -1, M, -1, -1); // Записываем время в модуль: 0 сек, 51 мин, 21 час, 27, октября, 2015 года, вторник.
-  //             }
-  //             // настройка год+
-  //             if (header.indexOf("GET /Year+") >= 0)
-  //             {
-  //               Y = Y + 1;
-  //               watch.settime(-1, -1, -1, -1, -1, Y, -1); // Записываем время в модуль: 0 сек, 51 мин, 21 час, 27, октября, 2015 года, вторник.
-  //             }
-  //             // настройка год-
-  //             if (header.indexOf("GET /Year-") >= 0)
-  //             {
-  //               Y = Y - 1;
-  //               watch.settime(-1, -1, -1, -1, -1, Y, -1); // Записываем время в модуль: 0 сек, 51 мин, 21 час, 27, октября, 2015 года, вторник.
-  //             }
-  //             // настройка час+
-  //             if (header.indexOf("GET /hour+") >= 0)
-  //             {
-  //               h = h + 1;
-  //               watch.settime(-1, -1, h, -1, -1, -1, -1); // Записываем время в модуль: 0 сек, 51 мин, 21 час, 27, октября, 2015 года, вторник.
-  //             }
-  //             // настройка час-
-  //             if (header.indexOf("GET /hour-") >= 0)
-  //             {
-  //               h = h - 1;
-  //               watch.settime(-1, -1, h, -1, -1, -1, -1); // Записываем время в модуль: 0 сек, 51 мин, 21 час, 27, октября, 2015 года, вторник.
-  //             }
-  //             // настройка минуты+
-  //             if (header.indexOf("GET /minute+") >= 0)
-  //             {
-  //               m = m + 1;
-  //               watch.settime(-1, m, -1, -1, -1, -1, -1); // Записываем время в модуль: 0 сек, 51 мин, 21 час, 27, октября, 2015 года, вторник.
-  //             }
-  //             // настройка минуты-
-  //             if (header.indexOf("GET /minute-") >= 0)
-  //             {
-  //               m = m - 1;
-  //               watch.settime(-1, m, -1, -1, -1, -1, -1); // Записываем время в модуль: 0 сек, 51 мин, 21 час, 27, октября, 2015 года, вторник.
-  //             }
-
-  //             /// вывод ВЕБ страници
-  //             // Display the HTML web page
-  //             client.println("<!DOCTYPE html><html>");
-  //             if (Page_1 == "Main")
-  //             {
-  //               client.println("<head><meta http-equiv=\"Refresh\" content=\"5\" /> </head>"); //обновление страници каждые 10 сек
-  //             }
-  //             client.println("<head><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">");
-  //             client.println("<link rel=\"icon\" href=\"data:,\">");
-  //             // CSS to style the on/off buttons
-  //             // Feel free to change the background-color and font-size attributes to fit your preferences
-  //             client.println("<style>html { font-family: Helvetica; display: inline-block; margin: 0px auto; text-align: left;}");
-  //             client.println(".button { background-color: #4CAF50; border: none; color: white; padding: 16px 10px;");
-  //             client.println("text-decoration: none; font-size: 16px; margin: 2px; cursor: pointer;}");
-  //             client.println(".button2 {background-color: #555555;}</style></head>");
-
-  //             //********************************
-
-  //             if (Page_1 == "Main")
-  //             {
-  //               // Web Page Heading
-  //               client.println("<h3 style=\"color: #5e9ca0;\"><span style=\"color: #0000ff;\">Date");
-  //               client.println(DATA_);
-  //               client.println("&nbsp; &nbsp; &nbsp;Actual time ");
-  //               client.println(TIME_);
-  //               client.println("</span></h3>");
-  //               client.println("<h3><span style=\"background-color: #ffffff; color: #ff0000;\">");
-  //               client.println(TEXT_W);
-  //               client.println("</span></h3><div>");
-  //               client.println("<h3><span style=\"background-color: #ffffff; color: #000000;\">&nbsp;</span><span style=\"background-color: #ffffff; color: #000000;\">Water activity </span><span style=\"background-color: #ffff00; color: #0000ff;\">");
-  //               client.println(String(WaterA));
-  //               client.println("&nbsp; &nbsp;</span>&nbsp; AW</h3></div><div>");
-  //               client.println("<h3><span style=\"background-color: #ffffff; color: #000000;\">Water content&nbsp; </span><span style=\"background-color: #00ff00; color: #000000;\">");
-  //               client.println(String(WaterC));
-  //               client.println(" </span>&nbsp; ppm</h3></div><div>");
-  //               client.println("<h3><span style=\"background-color: #ffffff; color: #000000;\">&nbsp; Temperature&nbsp; </span><span style=\"background-color: #ff99cc; color: #0000ff;\">");
-  //               client.println(String(te));
-  //               client.println("</span>&nbsp; C</h3> <div>");
-
-  //               //кнопки
-  //               client.println("</div>");
-  //               client.println("<a href=\"/REPORT\"><button class=\"button\">REPORT</button></a>");
-  //             }
-
-  //             //********************************
-  //             //Экран отчет
-  //             if (Page_1 == "Report")
-  //             {
-  //               // Web Page Heading
-
-  //               client.println("<h3><em> &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp;GlobeCore</em></h3>");
-  //               client.println("<h3>=================================</h3>");
-  //               client.println("<h3>Date ");
-  //               client.println(DATA_);
-  //               client.println(" &nbsp; &nbsp;Actual time ");
-  //               client.println(TIME_);
-  //               client.println("<h3>");
-
-  //               client.println("<h3>=================================</h3><div>");
-  //               client.println("<h3>Water activity, AW &nbsp; &nbsp; &nbsp; &nbsp;");
-  //               client.println(String(WaterA));
-  //               client.println("</h3><h3>Water content, &nbsp;ppm &nbsp; &nbsp; ");
-  //               client.println(String(WaterC));
-  //               client.println("&nbsp;</h3></div><h3>Temperature, C &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp;");
-  //               client.println(String(te));
-  //               client.println("</h3></div><div><h3>=================================</h3>");
-
-  //               //кнопки
-  //               if (Print_1 == "on")
-  //               {
-  //                 client.println("<a href=\"/PRINT/on\"><button class=\"button \">PRINT</button></a>");
-  //               }
-  //               else
-  //               {
-  //                 client.println("<a href=\"/PRINT/off\"><button class=\"button button2\">PRINT</button></a>");
-  //               }
-
-  //               client.println("<a href=\"/SETTYNG\"><button class=\"button\">SETTYNG</button></a>");
-  //               client.println("<a href=\"/Return\"><button class=\"button\">Return</button></a>");
-  //             }
-
-  //             //********************************
-
-  //             //Экран Настройки
-  //             if (Page_1 == "Setting")
-  //             {
-  //               // Web Page Heading
-
-  //               client.println("<h3>Date ");
-  //               client.println(DATA_);
-  //               client.println("&nbsp;Actual time ");
-  //               client.println(TIME_);
-  //               client.println("<h3>");
-
-  //               //кнопки
-  //               // uint8_t D, M, Y, h, m, s, W; // Объявляем переменные для получения следующих значений: D-день, M-месяц, Y-год, h-часы, m-минуты, s-секунды, W-день недели.
-  //               client.println("<p><a href=\"/Day+\"><button class=\"button\">...Day+..</button></a>");
-  //               client.println("<a href=\"/Day-\"><button class=\"button\">...Day-..</button></a></p>");
-  //               client.println("<p><a href=\"/Month+\"><button class=\"button\">Month+</button></a>");
-  //               client.println("<a href=\"/Month-\"><button class=\"button\">Month -</button></a></p>");
-  //               client.println("<p><a href=\"/Year+\"><button class=\"button\">..Year+..</button></a>");
-  //               client.println("<a href=\"/Year-\"><button class=\"button\">..Year-..</button></a></p>");
-  //               client.println("<p><a href=\"/hour+\"><button class=\"button\">..hour+..</button></a>");
-  //               client.println("<a href=\"/hour-\"><button class=\"button\">..hour-..</button></a></p>");
-  //               client.println("<p><a href=\"/minute+\"><button class=\"button\">minute+</button></a>");
-  //               client.println("<a href=\"/minute-\"><button class=\"button\">minute-</button></a></p>");
-  //               client.println("<p><a href=\"/update\"><button class=\"button\">.........UPDATE..........</button></a></p>");
-  //               client.println("<p><a href=\"/Return\"><button class=\"button\">..........Return...........</button></a></p>");
-  //             }
-
-  //             client.println("</body></html>");
-  //             // The HTTP response ends with another blank line
-  //             client.println();
-  //             // Break out of the while loop
-  //             break;
-  //           }
-  //           else
-  //           { // if you got a newline, then clear currentLine
-  //             currentLine = "";
-  //           }
-  //         }
-  //         else if (c != '\r')
-  //         {                   // if you got anything else but a carriage return character,
-  //           currentLine += c; // add it to the end of the currentLine
-  //         }
-  //       }
-  //     }
-  //     // Clear the header variable
-  //     header = "";
-  //     // Close the connection
-  //     client.stop();
-  //     //  Serial.println("Client disconnected.");
-  //     //  Serial.println("");
-  //   }
-  // }
-}
-
 void Task_Print(void *pvParam)
 {
   // TickType_t xLastWakeTime;
   // xLastWakeTime = xTaskGetTickCount();
-
-  while (1)
-  {
-    // vTaskDelayUntil(&xLastWakeTime, periodPrint);
-    vTaskDelay(PERIOD_PRINT);
-    // vTaskSuspendAll();
-    //*************************************************************************************************************************************************************************
-    // ПЕЧАТЬ
-    //*************************************************************************************************************************************************************************
-    if (Print_on)
-    {
       // // digitalWrite(LED_BUILTIN, HIGH);
       // // SWserial.println("PRINT") ;
       // printer.wake();
@@ -1081,8 +795,39 @@ void Task_Print(void *pvParam)
       // printer.feed(2);
       printer.flush();
 
-      printer.justify('C');                               //  Устанавливаем выравнивание текста по центру 'C' (Center)
-      printer.println("=GlobeCore=");                     //  Выводим текст
+      printer.justify('C'); //  Устанавливаем выравнивание текста по центру 'C' (Center)
+
+      printer.println();
+
+      printer.println("-Yateks- | -EE363- | -Vaisala- ");
+      printer.println("===============================");
+      printer.println(" ae   ppm| ae   ppm| ae    ppm ");
+      printer.feedRows (2);
+
+      while (1)
+      {
+    // vTaskDelayUntil(&xLastWakeTime, periodPrint);
+    vTaskDelay(PERIOD_PRINT);
+    // vTaskSuspendAll();
+    //*************************************************************************************************************************************************************************
+    // ПЕЧАТЬ
+    //*************************************************************************************************************************************************************************
+    if (1)
+    {
+      printer.print(yateks_aw, 2);
+      printer.print(" ");
+      printer.print(yateks_ppm, 1);
+      printer.print("|");
+
+      printer.print(WaterA, 2);
+      printer.print(" ");
+      printer.print(WaterC, 1);
+      printer.print("|");
+
+      printer.print(vaisala_aw, 2);
+      printer.print(" ");
+      printer.println(vaisala_ppm, 1);
+      /**printer.println("=GlobeCore=");                     //  Выводим текст
       printer.justify('L');                               //  Устанавливаем выравнивание текста по левому краю 'L' (Left) - используется по умолчанию
       printer.println("==============================="); //  Выводим текст
       printer.print("Data ");                             //  Выводим текст
@@ -1122,7 +867,7 @@ void Task_Print(void *pvParam)
 
       // printer.offline();
       Print_on = false; // сбросить команду печать
-      // digitalWrite(LED_BUILTIN, LOW);
+      // digitalWrite(LED_BUILTIN, LOW); /**/
     }
 
     digitalWrite(27, !digitalRead(27)); // мигаем светодиодом
@@ -1200,6 +945,7 @@ void Task_RTC(void *pvParam)
 
 void Task_RS485(void *pvParam)
 {
+  delay (5000);
   //*************************************************************************************************************************************************************************
   // Данные  (чтение датчика)
   //*************************************************************************************************************************************************************************
@@ -1217,7 +963,7 @@ void Task_RS485(void *pvParam)
     // vTaskDelayUntil(&xLastWakeTime, periodRS485);
     vTaskDelay(PERIOD_RS485);
     ////////////// Чтение активности!
-
+#ifdef EE364
     modbus.begin(Slave_ID_Moist, Serial2);
     modbus.clearResponseBuffer();
     result = modbus.readHoldingRegisters(0x33, 2);
@@ -1274,6 +1020,7 @@ void Task_RS485(void *pvParam)
         te = 0.0;
       }
     }
+#endif
 
 ////////////// Чтение водорода!
 // vTaskDelayUntil(&xLastWakeTime, periodRS485);
@@ -1401,7 +1148,76 @@ void Task_RS485(void *pvParam)
     else
     {
     }
+#endif //ILUMINATION
 #endif
+
+#ifdef YATEKS
+    vTaskDelay(PERIOD_RS485);
+  modbus.begin(Slave_ID_Yateks, Serial2);
+    modbus.clearResponseBuffer();
+    result = modbus.readInputRegisters(0x0, 3);
+      yateks_t = ((float)modbus.getResponseBuffer(0x00)) /10;
+      yateks_aw = ((float)modbus.getResponseBuffer(0x01)) /1000;
+      yateks_ppm = ((float)modbus.getResponseBuffer(0x02)); 
+    if (result == modbus.ku8MBSuccess)
+    {
+    }
+    else
+    {
+      
+    }
+#endif
+
+#ifdef VAISALA
+    vTaskDelay(PERIOD_RS485);
+    modbus.begin(Slave_ID_Vaisala, Serial2);
+    modbus.clearResponseBuffer();
+    result = modbus.readInputRegisters(0x3, 2);
+    yateks_t = ((float)modbus.getResponseBuffer(0x00)) / 10;
+    vaisala_T = (((unsigned long)modbus.getResponseBuffer(0x00) << 16) | modbus.getResponseBuffer(0x01));
+
+    vTaskDelay(PERIOD_RS485);
+    result = modbus.readInputRegisters(29, 2);
+    vaisala_aw = (((unsigned long)modbus.getResponseBuffer(0x00) << 16) | modbus.getResponseBuffer(0x01));
+
+    vTaskDelay(PERIOD_RS485);
+    result = modbus.readInputRegisters(35, 2);
+    vaisala_ppm = (((unsigned long)modbus.getResponseBuffer(0x00) << 16) | modbus.getResponseBuffer(0x01));
+
+    if (result == modbus.ku8MBSuccess)
+    {
+    }
+    else
+    {
+    }
+#endif
+
+#ifdef DEBUG1  //симуляція значень РС485.
+    vTaskDelay(PERIOD_RS485);
+    // WaterA += 0.002;
+    // // WaterC += 0.2;
+    // te += 0.2;
+
+    // yateks_aw += 0.003;
+    // yateks_ppm += 0.03;
+    // yateks_t += 0.3;
+
+    // vaisala_aw += 0.004;
+    // vaisala_ppm += 0.04;
+    // vaisala_T += 0.4;
+
+    yateks_aw = ((float)random(0, 1000)) / 1000.0;
+    yateks_ppm = ((float)random(0, 1000)) / 10.0;
+    yateks_ppm = ((float)random(0, 1000)) / 10.0;
+
+    WaterA = ((float)random(0, 1000)) / 1000.0;
+    WaterC = ((float)random(0, 5000)) / 10.0;
+    te = ((float)random(0, 1000)) / 10.0;
+
+    vaisala_aw = ((float)random(0, 1000)) / 1000.0;
+    vaisala_ppm = ((float)random(0, 1000)) / 10.0;
+    vaisala_T = ((float)random(0, 1000)) / 10.0;
+
 #endif
   }
 }
@@ -1802,9 +1618,11 @@ void Task_Debug(void *pvParam)
   while (1)
   {
     vTaskDelay(PERIOD_Debug);
-    char buf[50];
-    sprintf(buf, "Moist=%.3f, ppm=%.3f, temp=%.3f, result = %i, H2_PCB_Temp=%.3f, H2_Oil_Temp=%.3f \n", WaterA, WaterC, te, result, h2_PCB_T, h2_Oil_T);
-    t90.setText(buf);
+    char buf[200];
+    sprintf(buf, "Yat_T=%.1f, Yat_aw=%.3f, Yat_ppm=%.2f, EEaw=%.3f, EEppm=%.2f, EE_T=%.1f, Vai_aw=%.3f, Vai_ppm=%.2f, Vai_T=%.1f \n",
+                 yateks_t,   yateks_aw,   yateks_ppm,    WaterA,     WaterC,    te,        vaisala_aw, vaisala_ppm,   vaisala_T   );
+    Serial.print (buf);
+
     //   uint8_t set, r, g, b;
     //   int s;
     //   while (1)
@@ -2071,4 +1889,275 @@ int8_t recvPageNumber(uint32_t timeout)
   }
 
   return ret;
+}
+
+void Task_Web(void *pvParam)
+{
+  // // TickType_t xLastWakeTime;
+  // // xLastWakeTime = xTaskGetTickCount();
+  // while (1)
+  // {
+  //   // vTaskDelayUntil(&xLastWakeTime, periodWeb);
+  //   vTaskDelay(PERIOD_Web);
+  //   //*************************************************************************************************************************************************************************
+  //   // ВЕБ СЕРВЕР
+  //   //*************************************************************************************************************************************************************************
+  //   // WiFiClient client = server.available(); // Listen for incoming clients
+
+  //   if (client)
+  //   {                          // If a new client connects,
+  //                              // Serial.println("New Client.");          // print a message out in the serial port
+  //     String currentLine = ""; // make a String to hold incoming data from the client
+  //     while (client.connected())
+  //     { // loop while the client's connected
+  //       if (client.available())
+  //       {                         // if there's bytes to read from the client,
+  //         char c = client.read(); // read a byte, then
+  //                                 //     Serial.write(c);                    // print it out the serial monitor
+  //         header += c;
+  //         if (c == '\n')
+  //         { // if the byte is a newline character
+  //           // if the current line is blank, you got two newline characters in a row.
+  //           // that's the end of the client HTTP request, so send a response:
+  //           if (currentLine.length() == 0)
+  //           {
+
+  //             // HTTP headers always start with a response code (e.g. HTTP/1.1 200 OK)
+  //             // and a content-type so the client knows what's coming, then a blank line:
+  //             client.println("HTTP/1.1 200 OK");
+  //             client.println("Content-type:text/html");
+  //             client.println("Connection: close");
+  //             client.println();
+
+  //             ///////////
+
+  //             // Команда REPORT
+  //             if (header.indexOf("GET /REPORT") >= 0)
+  //             {
+  //               Page_1 = "Report"; //
+  //             }
+
+  //             // Команда PRINT
+  //             if (header.indexOf("GET /PRINT/on") >= 0)
+  //             {
+  //               Print_1 = "off";
+  //               Print_on = true; //
+  //             }
+  //             // Команда PRINT
+  //             if (header.indexOf("GET /PRINT/off") >= 0)
+  //             {
+  //               Print_1 = "on";
+  //             }
+
+  //             // Команда Return
+  //             if (header.indexOf("GET /Return") >= 0)
+  //             {
+  //               Page_1 = "Main"; //
+  //             }
+
+  //             // Команда SETTYNG
+  //             if (header.indexOf("GET /SETTYNG") >= 0)
+  //             {
+  //               Page_1 = "Setting"; //
+  //             }
+
+  //             /////**** Команда настройка RTC
+  //             // watch.settime(s,m,h,D,M,Y,W); // Записываем время в модуль: 0 сек, 51 мин, 21 час, 27, октября, 2015 года, вторник.
+  //             // uint8_t D, M, Y, h, m, s, W; // Объявляем переменные для получения следующих значений: D-день, M-месяц, Y-год, h-часы, m-минуты, s-секунды, W-день недели.
+  //             //  настройка ДЕНЬ+
+  //             if (header.indexOf("GET /Day+") >= 0)
+  //             {
+  //               D = D + 1;
+  //               watch.settime(-1, -1, -1, D, -1, -1, -1); // Записываем время в модуль: 0 сек, 51 мин, 21 час, 27, октября, 2015 года, вторник.
+  //             }
+  //             // настройка ДЕНЬ-
+  //             if (header.indexOf("GET /Day-") >= 0)
+  //             {
+  //               D = D - 1;
+  //               watch.settime(-1, -1, -1, D, -1, -1, -1); // Записываем время в модуль: 0 сек, 51 мин, 21 час, 27, октября, 2015 года, вторник.
+  //             }
+  //             // настройка месяц+
+  //             if (header.indexOf("GET /Month+") >= 0)
+  //             {
+  //               M = M + 1;
+  //               watch.settime(-1, -1, -1, -1, M, -1, -1); // Записываем время в модуль: 0 сек, 51 мин, 21 час, 27, октября, 2015 года, вторник.
+  //             }
+  //             // настройка месяц-
+  //             if (header.indexOf("GET /Month-") >= 0)
+  //             {
+  //               M = M - 1;
+  //               watch.settime(-1, -1, -1, -1, M, -1, -1); // Записываем время в модуль: 0 сек, 51 мин, 21 час, 27, октября, 2015 года, вторник.
+  //             }
+  //             // настройка год+
+  //             if (header.indexOf("GET /Year+") >= 0)
+  //             {
+  //               Y = Y + 1;
+  //               watch.settime(-1, -1, -1, -1, -1, Y, -1); // Записываем время в модуль: 0 сек, 51 мин, 21 час, 27, октября, 2015 года, вторник.
+  //             }
+  //             // настройка год-
+  //             if (header.indexOf("GET /Year-") >= 0)
+  //             {
+  //               Y = Y - 1;
+  //               watch.settime(-1, -1, -1, -1, -1, Y, -1); // Записываем время в модуль: 0 сек, 51 мин, 21 час, 27, октября, 2015 года, вторник.
+  //             }
+  //             // настройка час+
+  //             if (header.indexOf("GET /hour+") >= 0)
+  //             {
+  //               h = h + 1;
+  //               watch.settime(-1, -1, h, -1, -1, -1, -1); // Записываем время в модуль: 0 сек, 51 мин, 21 час, 27, октября, 2015 года, вторник.
+  //             }
+  //             // настройка час-
+  //             if (header.indexOf("GET /hour-") >= 0)
+  //             {
+  //               h = h - 1;
+  //               watch.settime(-1, -1, h, -1, -1, -1, -1); // Записываем время в модуль: 0 сек, 51 мин, 21 час, 27, октября, 2015 года, вторник.
+  //             }
+  //             // настройка минуты+
+  //             if (header.indexOf("GET /minute+") >= 0)
+  //             {
+  //               m = m + 1;
+  //               watch.settime(-1, m, -1, -1, -1, -1, -1); // Записываем время в модуль: 0 сек, 51 мин, 21 час, 27, октября, 2015 года, вторник.
+  //             }
+  //             // настройка минуты-
+  //             if (header.indexOf("GET /minute-") >= 0)
+  //             {
+  //               m = m - 1;
+  //               watch.settime(-1, m, -1, -1, -1, -1, -1); // Записываем время в модуль: 0 сек, 51 мин, 21 час, 27, октября, 2015 года, вторник.
+  //             }
+
+  //             /// вывод ВЕБ страници
+  //             // Display the HTML web page
+  //             client.println("<!DOCTYPE html><html>");
+  //             if (Page_1 == "Main")
+  //             {
+  //               client.println("<head><meta http-equiv=\"Refresh\" content=\"5\" /> </head>"); //обновление страници каждые 10 сек
+  //             }
+  //             client.println("<head><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">");
+  //             client.println("<link rel=\"icon\" href=\"data:,\">");
+  //             // CSS to style the on/off buttons
+  //             // Feel free to change the background-color and font-size attributes to fit your preferences
+  //             client.println("<style>html { font-family: Helvetica; display: inline-block; margin: 0px auto; text-align: left;}");
+  //             client.println(".button { background-color: #4CAF50; border: none; color: white; padding: 16px 10px;");
+  //             client.println("text-decoration: none; font-size: 16px; margin: 2px; cursor: pointer;}");
+  //             client.println(".button2 {background-color: #555555;}</style></head>");
+
+  //             //********************************
+
+  //             if (Page_1 == "Main")
+  //             {
+  //               // Web Page Heading
+  //               client.println("<h3 style=\"color: #5e9ca0;\"><span style=\"color: #0000ff;\">Date");
+  //               client.println(DATA_);
+  //               client.println("&nbsp; &nbsp; &nbsp;Actual time ");
+  //               client.println(TIME_);
+  //               client.println("</span></h3>");
+  //               client.println("<h3><span style=\"background-color: #ffffff; color: #ff0000;\">");
+  //               client.println(TEXT_W);
+  //               client.println("</span></h3><div>");
+  //               client.println("<h3><span style=\"background-color: #ffffff; color: #000000;\">&nbsp;</span><span style=\"background-color: #ffffff; color: #000000;\">Water activity </span><span style=\"background-color: #ffff00; color: #0000ff;\">");
+  //               client.println(String(WaterA));
+  //               client.println("&nbsp; &nbsp;</span>&nbsp; AW</h3></div><div>");
+  //               client.println("<h3><span style=\"background-color: #ffffff; color: #000000;\">Water content&nbsp; </span><span style=\"background-color: #00ff00; color: #000000;\">");
+  //               client.println(String(WaterC));
+  //               client.println(" </span>&nbsp; ppm</h3></div><div>");
+  //               client.println("<h3><span style=\"background-color: #ffffff; color: #000000;\">&nbsp; Temperature&nbsp; </span><span style=\"background-color: #ff99cc; color: #0000ff;\">");
+  //               client.println(String(te));
+  //               client.println("</span>&nbsp; C</h3> <div>");
+
+  //               //кнопки
+  //               client.println("</div>");
+  //               client.println("<a href=\"/REPORT\"><button class=\"button\">REPORT</button></a>");
+  //             }
+
+  //             //********************************
+  //             //Экран отчет
+  //             if (Page_1 == "Report")
+  //             {
+  //               // Web Page Heading
+
+  //               client.println("<h3><em> &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp;GlobeCore</em></h3>");
+  //               client.println("<h3>=================================</h3>");
+  //               client.println("<h3>Date ");
+  //               client.println(DATA_);
+  //               client.println(" &nbsp; &nbsp;Actual time ");
+  //               client.println(TIME_);
+  //               client.println("<h3>");
+
+  //               client.println("<h3>=================================</h3><div>");
+  //               client.println("<h3>Water activity, AW &nbsp; &nbsp; &nbsp; &nbsp;");
+  //               client.println(String(WaterA));
+  //               client.println("</h3><h3>Water content, &nbsp;ppm &nbsp; &nbsp; ");
+  //               client.println(String(WaterC));
+  //               client.println("&nbsp;</h3></div><h3>Temperature, C &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp;");
+  //               client.println(String(te));
+  //               client.println("</h3></div><div><h3>=================================</h3>");
+
+  //               //кнопки
+  //               if (Print_1 == "on")
+  //               {
+  //                 client.println("<a href=\"/PRINT/on\"><button class=\"button \">PRINT</button></a>");
+  //               }
+  //               else
+  //               {
+  //                 client.println("<a href=\"/PRINT/off\"><button class=\"button button2\">PRINT</button></a>");
+  //               }
+
+  //               client.println("<a href=\"/SETTYNG\"><button class=\"button\">SETTYNG</button></a>");
+  //               client.println("<a href=\"/Return\"><button class=\"button\">Return</button></a>");
+  //             }
+
+  //             //********************************
+
+  //             //Экран Настройки
+  //             if (Page_1 == "Setting")
+  //             {
+  //               // Web Page Heading
+
+  //               client.println("<h3>Date ");
+  //               client.println(DATA_);
+  //               client.println("&nbsp;Actual time ");
+  //               client.println(TIME_);
+  //               client.println("<h3>");
+
+  //               //кнопки
+  //               // uint8_t D, M, Y, h, m, s, W; // Объявляем переменные для получения следующих значений: D-день, M-месяц, Y-год, h-часы, m-минуты, s-секунды, W-день недели.
+  //               client.println("<p><a href=\"/Day+\"><button class=\"button\">...Day+..</button></a>");
+  //               client.println("<a href=\"/Day-\"><button class=\"button\">...Day-..</button></a></p>");
+  //               client.println("<p><a href=\"/Month+\"><button class=\"button\">Month+</button></a>");
+  //               client.println("<a href=\"/Month-\"><button class=\"button\">Month -</button></a></p>");
+  //               client.println("<p><a href=\"/Year+\"><button class=\"button\">..Year+..</button></a>");
+  //               client.println("<a href=\"/Year-\"><button class=\"button\">..Year-..</button></a></p>");
+  //               client.println("<p><a href=\"/hour+\"><button class=\"button\">..hour+..</button></a>");
+  //               client.println("<a href=\"/hour-\"><button class=\"button\">..hour-..</button></a></p>");
+  //               client.println("<p><a href=\"/minute+\"><button class=\"button\">minute+</button></a>");
+  //               client.println("<a href=\"/minute-\"><button class=\"button\">minute-</button></a></p>");
+  //               client.println("<p><a href=\"/update\"><button class=\"button\">.........UPDATE..........</button></a></p>");
+  //               client.println("<p><a href=\"/Return\"><button class=\"button\">..........Return...........</button></a></p>");
+  //             }
+
+  //             client.println("</body></html>");
+  //             // The HTTP response ends with another blank line
+  //             client.println();
+  //             // Break out of the while loop
+  //             break;
+  //           }
+  //           else
+  //           { // if you got a newline, then clear currentLine
+  //             currentLine = "";
+  //           }
+  //         }
+  //         else if (c != '\r')
+  //         {                   // if you got anything else but a carriage return character,
+  //           currentLine += c; // add it to the end of the currentLine
+  //         }
+  //       }
+  //     }
+  //     // Clear the header variable
+  //     header = "";
+  //     // Close the connection
+  //     client.stop();
+  //     //  Serial.println("Client disconnected.");
+  //     //  Serial.println("");
+  //   }
+  // }
 }
