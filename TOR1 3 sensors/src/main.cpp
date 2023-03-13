@@ -3,11 +3,11 @@ using namespace std;
 
 *********/
 #define ILLUMINATION
-// #define YATEKS
-// #define EE364
-// #define VAISALA
+#define YATEKS
+#define EE364
+#define VAISALA
 // #define HYDROGEN_SENSOR
-#define DEBUG1 // Симуляція зміни значень з датчиків *+0.1... 
+// #define DEBUG1 // Симуляція зміни значень з датчиків *+0.1... 
 // #define DEBUG3
 // #define DEBUG5
 // #define DEBUG485
@@ -29,7 +29,7 @@ using namespace std;
 #define Slave_ID_Moist 243 // адресс датчика влажности
 #define Slave_ID_H2 1      // адрес датчика водорода
 #define Slave_ID_Yateks 5
-#define Slave_ID_Vaisala 2
+#define Slave_ID_Vaisala 240
 #define BUZER_ON // использование бузера
 // таймера в миллисекундах
 #define TIMER15m 900000
@@ -363,7 +363,7 @@ void setup()
   led_fon = 0;
 #endif
   // xTaskCreatePinnedToCore(Task_DS18b20, "Task DS18b20", 5000, NULL, 1, &Handle_DS18b20, 0);
-  // xTaskCreatePinnedToCore(Task_Debug, "Task Debug", 5000, NULL, 2, &Handle_Debug, 0);
+  xTaskCreatePinnedToCore(Task_Debug, "Task Debug", 5000, NULL, 2, &Handle_Debug, 0);
   /**/
 }
 
@@ -418,6 +418,8 @@ void bt0pop(void *ptr)
   uint32_t p;
   bt0.getValue(&p);
   printing_timer = (bool)p;
+
+
 }
 
 void bt0push(void *ptr)
@@ -784,35 +786,35 @@ void Task_Print(void *pvParam)
       // // SWserial.println("PRINT") ;
       // printer.wake();
       // delay(50);
-      printer.begin();
-      delay(100);
 
-      printer.setSize('S'); //  Устанавливаем маленький размер шрифта 'S' (Small) - используется по умолчанию
-      printer.setDefault(); //  Устанавливаем настройки принтера по умолчанию. Функцию удобно использовать если Вы желаете вывести текст, но хотите быть уверены что на него не повлияют ранее установленные размеры или начертания.
-      // printer.offline();
-      printer.setTimes(6000, 3000);
+    printer.begin();
+    delay(100);
 
-      // printer.feed(2);
-      printer.flush();
+    printer.setSize('S'); //  Устанавливаем маленький размер шрифта 'S' (Small) - используется по умолчанию
+    printer.setDefault(); //  Устанавливаем настройки принтера по умолчанию. Функцию удобно использовать если Вы желаете вывести текст, но хотите быть уверены что на него не повлияют ранее установленные размеры или начертания.
+    // printer.offline();
+    printer.setTimes(6000, 3000);
 
-      printer.justify('C'); //  Устанавливаем выравнивание текста по центру 'C' (Center)
+    // printer.feed(2);
+    printer.flush();
 
-      printer.println();
+    printer.justify('C'); //  Устанавливаем выравнивание текста по центру 'C' (Center)
 
-      printer.println("-Yateks- | -EE363- | -Vaisala- ");
-      printer.println("===============================");
-      printer.println(" ae   ppm| ae   ppm| ae    ppm ");
-      printer.feedRows (2);
+    printer.println();
 
-      while (1)
-      {
+    printer.println("-Yateks- | -EE363- | -Vaisala- ");
+    printer.println("===============================");
+    printer.println(" ae   ppm| ae   ppm| ae    ppm ");
+
+  while (1)
+  {
     // vTaskDelayUntil(&xLastWakeTime, periodPrint);
     vTaskDelay(PERIOD_PRINT);
     // vTaskSuspendAll();
     //*************************************************************************************************************************************************************************
     // ПЕЧАТЬ
     //*************************************************************************************************************************************************************************
-    if (1)
+    if (printing_timer)
     {
       printer.print(yateks_aw, 2);
       printer.print(" ");
@@ -1172,18 +1174,21 @@ void Task_RS485(void *pvParam)
     vTaskDelay(PERIOD_RS485);
     modbus.begin(Slave_ID_Vaisala, Serial2);
     modbus.clearResponseBuffer();
-    result = modbus.readInputRegisters(0x3, 2);
-    yateks_t = ((float)modbus.getResponseBuffer(0x00)) / 10;
-    vaisala_T = (((unsigned long)modbus.getResponseBuffer(0x00) << 16) | modbus.getResponseBuffer(0x01));
+    result = modbus.readHoldingRegisters(3, 2);
+    wa.x = (((unsigned long)modbus.getResponseBuffer(0x00) << 16) | modbus.getResponseBuffer(0x01));
+    vaisala_T = wa.f;
 
+    modbus.clearResponseBuffer();
     vTaskDelay(PERIOD_RS485);
-    result = modbus.readInputRegisters(29, 2);
-    vaisala_aw = (((unsigned long)modbus.getResponseBuffer(0x00) << 16) | modbus.getResponseBuffer(0x01));
+    result = modbus.readHoldingRegisters(29, 2);
+    wa.x = (((unsigned long)modbus.getResponseBuffer(0x00) << 16) | modbus.getResponseBuffer(0x01));
+    vaisala_aw = wa.f;
 
+    modbus.clearResponseBuffer();
     vTaskDelay(PERIOD_RS485);
-    result = modbus.readInputRegisters(35, 2);
-    vaisala_ppm = (((unsigned long)modbus.getResponseBuffer(0x00) << 16) | modbus.getResponseBuffer(0x01));
-
+    result = modbus.readHoldingRegisters(35, 2);
+    wa.x = (((unsigned long)modbus.getResponseBuffer(0x00) << 16) | modbus.getResponseBuffer(0x01));
+    vaisala_ppm = wa.f;
     if (result == modbus.ku8MBSuccess)
     {
     }
@@ -1619,11 +1624,11 @@ void Task_Debug(void *pvParam)
   {
     vTaskDelay(PERIOD_Debug);
     char buf[200];
-    sprintf(buf, "Yat_T=%.1f, Yat_aw=%.3f, Yat_ppm=%.2f, EEaw=%.3f, EEppm=%.2f, EE_T=%.1f, Vai_aw=%.3f, Vai_ppm=%.2f, Vai_T=%.1f \n",
-                 yateks_t,   yateks_aw,   yateks_ppm,    WaterA,     WaterC,    te,        vaisala_aw, vaisala_ppm,   vaisala_T   );
+    sprintf(buf, "Yateks T: %4.1f, aw: %5.3f, ppm: %6.2f | EE364 T: %4.1f, aw: %5.3f, ppm: %6.2f | Vaisala T: %4.1f, aw: %5.3f, Vai_ppm: %6.2f\n" ,
+                 yateks_t,      yateks_aw, yateks_ppm,     te,     WaterA,  WaterC,   vaisala_T,   vaisala_aw, vaisala_ppm  );
     Serial.print (buf);
-
-    //   uint8_t set, r, g, b;
+    
+        //   uint8_t set, r, g, b;
     //   int s;
     //   while (1)
     //   {
