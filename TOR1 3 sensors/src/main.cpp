@@ -3,9 +3,10 @@ using namespace std;
 
 *********/
 #define ILLUMINATION
-#define YATEKS
+#define YATEKS1
+#define YATEKS2
 #define EE364
-#define VAISALA
+// #define VAISALA
 // #define HYDROGEN_SENSOR
 // #define DEBUG1 // Симуляція зміни значень з датчиків *+0.1... 
 // #define DEBUG3
@@ -227,6 +228,7 @@ float WaterA_m = 0.0, WaterC_m = 0.0, te_m = 0.0, h2_m = 0.0;
 float WaterA_p = 0.0, WaterAmin_p = 0.0, WaterAmax_p = 0.0, WaterC_p = 0.0, WaterCmin_p = 0.0, WaterCmax_p = 0.0, te_p = 0.0, h2_p = 0.0; // переменные для печати
 float PCB_Temper_TOR1, CPU_Temper_TOR1;    
 float yateks_aw=0.0, yateks_ppm=0.0, yateks_t=0.0;
+float yateks2_aw=0.0, yateks2_ppm=0.0, yateks2_t=0.0;
 float vaisala_aw=0.0, vaisala_ppm = 0.0, vaisala_T = 0.0;                                                                                               // температура с датчика DS18b20
 uint32_t h2;                                                                                                                              // температура c (датчика)
 uint16_t h2_status, h2_status_m;
@@ -1153,9 +1155,9 @@ void Task_RS485(void *pvParam)
 #endif //ILUMINATION
 #endif
 
-#ifdef YATEKS
+#ifdef YATEKS1
     vTaskDelay(PERIOD_RS485);
-  modbus.begin(Slave_ID_Yateks, Serial2);
+  modbus.begin(5, Serial2);
     modbus.clearResponseBuffer();
     result = modbus.readInputRegisters(0x0, 3);
       yateks_t = ((float)modbus.getResponseBuffer(0x00)) /10;
@@ -1167,6 +1169,22 @@ void Task_RS485(void *pvParam)
     else
     {
       
+    }
+#endif
+
+#ifdef YATEKS2
+    vTaskDelay(PERIOD_RS485);
+  modbus.begin(6, Serial2);
+    modbus.clearResponseBuffer();
+    result = modbus.readInputRegisters(0x0, 3);
+      yateks2_t = ((float)modbus.getResponseBuffer(0x00)) /10;
+      yateks2_aw = ((float)modbus.getResponseBuffer(0x01)) /1000;
+      yateks2_ppm = ((float)modbus.getResponseBuffer(0x02)); 
+    if (result == modbus.ku8MBSuccess)
+    {
+    }
+    else
+    { 
     }
 #endif
 
@@ -1624,8 +1642,8 @@ void Task_Debug(void *pvParam)
   {
     vTaskDelay(PERIOD_Debug);
     char buf[200];
-    sprintf(buf, "Yateks T: %4.1f, aw: %5.3f, ppm: %6.2f | EE364 T: %4.1f, aw: %5.3f, ppm: %6.2f | Vaisala T: %4.1f, aw: %5.3f, Vai_ppm: %6.2f\n" ,
-                 yateks_t,      yateks_aw, yateks_ppm,     te,     WaterA,  WaterC,   vaisala_T,   vaisala_aw, vaisala_ppm  );
+    sprintf(buf, "Yateks1 T: %4.1f, aw: %5.3f, ppm: %6.2f | Yateks2 T: %4.1f, aw: %5.3f, ppm: %6.2f | EE364 T: %4.1f, aw: %5.3f, ppm: %6.2f\n" ,
+                 yateks_t,      yateks_aw, yateks_ppm,   yateks2_t,      yateks2_aw, yateks2_ppm,     te,     WaterA,  WaterC );
     Serial.print (buf);
     
         //   uint8_t set, r, g, b;
